@@ -1,80 +1,174 @@
-# pytorch-job
+# mxnet-job
 
-> Prototypes for running PyTorch jobs.
+> Prototypes for running MXNet jobs.
 
 
-* [Quickstart](#quickstart)
-* [Using Prototypes](#using-prototypes)
-  * [io.ksonnet.pkg.pytorch-operator](#io.ksonnet.pkg.pytorch-operator)
-  * [io.ksonnet.pkg.pytorch-job](#io.ksonnet.pkg.pytorch-job)
+* [Installing MXNet Operator](#install-mxnet-operator)
+* [Verify that MXNet support is included in your Kubeflow deployment](#verify-deployment)
+* [Creating a MXNet Job](#create-mxnet-job)
+* [Monitoring a MXNet Job](#monitor-mxnet-job)
 
-## Quickstart
+## Installing MXNet Operator
 
-*The following commands use the `io.ksonnet.pkg.pytorch-job` prototype to generate Kubernetes YAML for pytorch-job, and then deploys it to your Kubernetes cluster.*
+If you haven’t already done so please follow [the Getting Started Guide](https://www.kubeflow.org/docs/started/getting-started/) to deploy Kubeflow.
 
-First, create a cluster and install the ksonnet CLI (see root-level [README.md](rootReadme)).
+An alpha version of MXNet support was introduced with Kubeflow 0.2.0. You must be using a version of Kubeflow newer than 0.2.0.
 
-If you haven't yet created a [ksonnet application](linkToSomewhere), do so using `ks init <app-name>`.
+## Verify Deployment
 
-Finally, in the ksonnet application directory, run the following:
+Check that the PyTorch custom resource is installed
 
-```shell
-# Expand prototype as a Jsonnet file, place in a file in the
-# `components/` directory. (YAML and JSON are also available.)
-$ ks pkg install kubeflow/pytorch-job@master
-$ ks prototype use io.ksonnet.pkg.pytorch-operator pytorch-operator \
-  --namespace default \
-  --name pytorch-operator
-
-$ ks prototype use io.ksonnet.pkg.pytorch-job pytorch-job \
-  --namespace default \
-  --name pytorch-job
-
-# Apply to server.
-$ ks apply default -c pytorch-operator # wait for the operator to be running
-$ ks apply default -c pytorch-job
+```
+kubectl get crd
 ```
 
-## Using the library
+The output should include mxjobs.kubeflow.org
 
-The library files for pytorch-job define a set of relevant *parts* (_e.g._, deployments, services, secrets, and so on) that can be combined to configure pytorch-job for a wide variety of scenarios. For example, a database like Redis may need a secret to hold the user password, or it may have no password if it's acting as a cache.
-
-This library provides a set of pre-fabricated "flavors" (or "distributions") of pytorch-job, each of which is configured for a different use case. These are captured as ksonnet *prototypes*, which allow users to interactively customize these distributions for their specific needs.
-
-These prototypes, as well as how to use them, are enumerated below.
-
-### io.ksonnet.pkg.pytorch-operator
-
-A PyTorch Operator.
-#### Example
-
-```shell
-# Expand prototype as a Jsonnet file, place in a file in the
-# `components/` directory. (YAML and JSON are also available.)
-$ ks prototype use io.ksonnet.pkg.pytorch-operator pytorch-operator \
-  --name YOUR_NAME_HERE
+```
+NAME                                           AGE
+...
+mxjobs.kubeflow.org                       4d
+...
 ```
 
-#### Parameters
+If it is not included you can add it as follows
 
-The available options to pass prototype are:
-
-* `--name=<name>`: Name to give to each of the components [string]
-
-### io.ksonnet.pkg.pytorch-job
-
-A PyTorch job.
-#### Example
-
-```shell
-# Expand prototype as a Jsonnet file, place in a file in the
-# `components/` directory. (YAML and JSON are also available.)
-$ ks prototype use io.ksonnet.pkg.pytorch-job pytorch-job \
-  --name YOUR_NAME_HERE
+```
+cd ${KSONNET_APP}
+ks pkg install kubeflow/mxnet-job
+ks generate mxnet-operator mxnet-operator
+ks apply ${ENVIRONMENT} -c mxnet-operator
 ```
 
-#### Parameters
 
-The available options to pass prototype are:
+## Create MXNet Job
 
-* `--name=<name>`: Name to give to each of the components [string]
+You can create MXNet Job by defining a MXNetjob config file. See [distributed MNIST](https://github.com/TuSimple/mxnet-operator/blob/master/examples/mxjob_sample/gpu/mx_job_dist.yaml) example config file. You may change the config file based on your requirements.
+
+```
+cat examples/mxjob_sample/gpu/mx_job_dist.yaml
+```
+
+Deploy the MXNetJob resource to start training:
+
+```
+kubectl create -f examples/mxjob_sample/gpu/mx_job_dist.yaml
+```
+
+You should now be able to see the created pods matching the specified number of replicas.
+
+
+## Monitor MXNet Job
+
+```
+kubectl get -o yaml mxjobs ${JOB_NAME}
+```
+
+See the status section to monitor the job status. Here is sample output when the job is successfully running.
+
+```
+apiVersion: kubeflow.org/v1alpha1
+kind: MXJob
+metadata:
+  clusterName: ""
+  creationTimestamp: 2018-08-16T08:05:50Z
+  generation: 1
+  name: gpu-dist-job
+  namespace: default
+  resourceVersion: "109005"
+  selfLink: /apis/kubeflow.org/v1alpha1/namespaces/default/mxjobs/gpu-dist-job
+  uid: 30a876eb-a12b-11e8-8432-704d7b2c0a63
+spec:
+  RuntimeId: i4i9
+  jobMode: dist
+  mxImage: jzp1025/mxnet:test
+  replicaSpecs:
+  - PsRootPort: 9000
+    mxReplicaType: SCHEDULER
+    replicas: 1
+    template:
+      metadata:
+        creationTimestamp: null
+      spec:
+        containers:
+        - args:
+          - train_mnist.py
+          command:
+          - python
+          image: jzp1025/mxnet:gpu_job
+          name: mxnet
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+          workingDir: /incubator-mxnet/example/image-classification
+        restartPolicy: OnFailure
+  - PsRootPort: 9091
+    mxReplicaType: SERVER
+    replicas: 2
+    template:
+      metadata:
+        creationTimestamp: null
+      spec:
+        containers:
+        - args:
+          - train_mnist.py
+          command:
+          - python
+          image: jzp1025/mxnet:gpu_job
+          name: mxnet
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+          workingDir: /incubator-mxnet/example/image-classification
+        restartPolicy: OnFailure
+  - PsRootPort: 9091
+    mxReplicaType: WORKER
+    replicas: 2
+    template:
+      metadata:
+        creationTimestamp: null
+      spec:
+        containers:
+        - args:
+          - train_mnist.py
+          - --num-epochs
+          - "10"
+          - --num-layers
+          - "2"
+          - --kv-store
+          - dist_device_sync
+          - --gpus
+          - "0"
+          command:
+          - python
+          image: jzp1025/mxnet:gpu_job
+          name: mxnet
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+          workingDir: /incubator-mxnet/example/image-classification
+        restartPolicy: OnFailure
+  terminationPolicy:
+    chief:
+      replicaIndex: 0
+      replicaName: SCHEDULER
+status:
+  phase: Running
+  reason: ""
+  replicaStatuses:
+  - ReplicasStates:
+      Running: 1
+    mx_replica_type: SCHEDULER
+    state: Running
+  - ReplicasStates:
+      Running: 2
+    mx_replica_type: SERVER
+    state: Running
+  - ReplicasStates:
+      Running: 2
+    mx_replica_type: WORKER
+    state: Running
+  state: Running
+```
+
+
